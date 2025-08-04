@@ -6,33 +6,70 @@
     name:
       - ca-certificates
       - apt-transport-https
+      - gpg
     state: present
+
+- name: Remove old key (apt)
+  become: true
+  ansible.builtin.file:
+    path: '/etc/apt/keyrings/microsoft.asc'
+    state: absent
 
 - name: Create APT keyrings dir
   become: true
   ansible.builtin.file:
-    path: '/etc/apt/keyrings'
+    path: '/usr/share/keyrings/'
     state: directory
     mode: 'u=rwx,go=rx'
 
-- name: Install key (apt)
+- name: Download key (apt)
   become: true
   ansible.builtin.get_url:
     url: '{{ visual_studio_code_mirror }}/keys/microsoft.asc'
-    dest: '/etc/apt/keyrings/'
+    dest: '/tmp/'
     mode: 'u=rw,go=r'
     force: true
 
+- name: Dearmor key (apt)
+  ansible.builtin.command: gpg --dearmor -o /tmp/microsoft.gpg /tmp/microsoft.asc
+  args:
+    creates: '/tmp/microsoft.gpg'
+
+- name: Install key (apt)
+  become: true
+  ansible.builtin.copy:
+    src: '/tmp/microsoft.gpg'
+    dest: '/usr/share/keyrings/microsoft.gpg'
+    mode: 'u=rw,go=r'
+    force: true
+
+- name: Clean up temporary key files (apt)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /tmp/microsoft.asc
+    - /tmp/microsoft.gpg
+
+- name: Remove old repo (apt)
+  become: true
+  ansible.builtin.file:
+    path: '/etc/apt/sources.list.d/vscode.list'
+    state: absent
+  when: not visual_studio_code_skip_add_repo
+
 - name: Install VS Code repo (apt)
   become: true
-  ansible.builtin.apt_repository:
-    repo: >-
-      deb [arch={{ visual_studio_code_deb_architecture }}
-      {{ visual_studio_code_gpgcheck | ternary("", " trusted=true") }}
-      signed-by=/etc/apt/keyrings/microsoft.asc]
-      {{ visual_studio_code_mirror }}/repos/code stable main
-    filename: vscode
-    state: present
+  ansible.builtin.copy:
+    content: |
+      Types: deb
+      URIs: {{ visual_studio_code_mirror }}/repos/code
+      Suites: stable
+      Components: main
+      Architectures: {{ visual_studio_code_deb_architecture }}
+      {{ 'Trusted: yes' if not visual_studio_code_gpgcheck else 'Signed-By: /usr/share/keyrings/microsoft.gpg' }}
+    dest: '/etc/apt/sources.list.d/vscode.sources'
+    mode: 'u=rw,go=r'
   when: not visual_studio_code_skip_add_repo
 
 - name: Install VS Code (apt)
