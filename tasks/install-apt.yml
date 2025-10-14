@@ -1,24 +1,34 @@
 # code: language=ansible
 ---
+- name: Remove from old package installation (apt list)
+  become: true
+  vars:
+    old_apt_source_file: '/etc/apt/sources.list.d/vscode.list'
+
+  block:
+    - name: Check if old source file exists
+      ansible.builtin.stat:
+        path: "{{ old_apt_source_file }}"
+      register: old_source_file_stat
+
+    - name: Remove old source file
+      ansible.builtin.file:
+        path: "{{ old_apt_source_file }}"
+        state: absent
+      when: old_source_file_stat.stat.exists
+
+    - name: Remove old apt key file (only if old source file existed)
+      ansible.builtin.file:
+        path: '/etc/apt/keyrings/microsoft.asc'
+        state: absent
+      when: old_source_file_stat.stat.exists
+
 - name: Install dependencies (apt)
   become: true
   ansible.builtin.apt:
     name:
       - python3-debian
     state: present
-
-- name: Remove old key (apt)
-  become: true
-  ansible.builtin.file:
-    path: '/etc/apt/keyrings/microsoft.asc'
-    state: absent
-
-- name: Remove old repo (apt)
-  become: true
-  ansible.builtin.file:
-    path: '/etc/apt/sources.list.d/vscode.list'
-    state: absent
-  when: not visual_studio_code_skip_add_repo
 
 - name: Install VS Code repo (apt)
   become: true
